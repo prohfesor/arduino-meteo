@@ -49,4 +49,5 @@ extern "C" void __cxa_pure_virtual() {;}
 #include "C:\Users\Prof\Documents\Arduino\Meteo\Adafruit_BMP085.h"
 #include "C:\Users\Prof\Documents\Arduino\Meteo\DHT.cpp"
 #include "C:\Users\Prof\Documents\Arduino\Meteo\DHT.h"
+#include "C:\Users\Prof\Documents\Arduino\Meteo\resource.h"
 #endif

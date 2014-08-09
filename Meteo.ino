@@ -6,6 +6,9 @@
 #include "Wire.h"
 #include "Adafruit_BMP085.h"
 
+#include "SPI.h"
+#include "Ethernet.h"
+
 #define DHTPIN 3     // what pin we're connected to
 
 // Uncomment whatever type you're using!
