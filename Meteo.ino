@@ -3,6 +3,9 @@
 
 #include "DHT.h"
 
+#include <Wire.h>
+#include <Adafruit_BMP085.h>
+
 #define DHTPIN 4     // what pin we're connected to
 
 // Uncomment whatever type you're using!
