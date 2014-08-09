@@ -3,10 +3,10 @@
 
 #include "DHT.h"
 
-#include <Wire.h>
-#include <Adafruit_BMP085.h>
+#include "Wire.h"
+#include "Adafruit_BMP085.h"
 
-#define DHTPIN 4     // what pin we're connected to
+#define DHTPIN 3     // what pin we're connected to
 
 // Uncomment whatever type you're using!
 //#define DHTTYPE DHT11   // DHT 11 
@@ -31,18 +31,38 @@
 // Example to initialize DHT sensor for Arduino Due:
 DHT dht(DHTPIN, DHTTYPE, 7);
 
+/***************************************************
+This is an example for the BMP085 Barometric Pressure & Temp Sensor
+
+Designed specifically to work with the Adafruit BMP085 Breakout
+----> https://www.adafruit.com/products/391
+
+These displays use I2C to communicate, 2 pins are required to
+interface
+Adafruit invests time and resources providing this open source code,
+please support Adafruit and open-source hardware by purchasing
+products from Adafruit!
+
+Written by Limor Fried/Ladyada for Adafruit Industries.
+BSD license, all text above must be included in any redistribution
+****************************************************/
+Adafruit_BMP085 bmp;
+
 void setup() {
 	Serial.begin(9600);
-	Serial.println("DHTxx test!");
-
+	
+	Serial.println("DHTxx starting");
 	dht.begin();
+	
+	Serial.println("BMPxxx starting");
+	bmp.begin();
 }
 
 void loop() {
 	// Wait a few seconds between measurements.
-	delay(800);
+	delay(4000);
 
-	// Reading temperature or humidity takes about 250 milliseconds!
+	// Reading DHT temperature or humidity takes about 250 milliseconds!
 	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
 	float h = dht.readHumidity();
 	// Read temperature as Celsius
@@ -54,10 +74,37 @@ void loop() {
 		return;
 	}
 
+	//Output
 	Serial.print("Humidity: ");
 	Serial.print(h);
 	Serial.print("%\t");
 	Serial.print("Temperature: ");
 	Serial.print(t);
-	Serial.println("*C\t");
+	Serial.print("*C\t");
+	Serial.println();
+
+	//BMP sensor
+	//read alt
+	float a = bmp.readAltitude();
+	//read pressure
+	float p = bmp.readPressure();
+	//read temp (baro)
+	float t2 = bmp.readTemperature();
+
+	// Check if any reads failed and exit early (to try again).
+	if (isnan(a) || isnan(p) || isnan(t2)) {
+		Serial.println("Failed to read from BMP sensor!");
+		return;
+	}
+
+	//output
+	Serial.print("Pressure: ");
+	Serial.print(p);
+	Serial.print("Pa\tAltitude: ");
+	Serial.print(a);
+	Serial.print("m\t");
+	Serial.print("Temperature: ");
+	Serial.print(t2);
+	Serial.print("*C");
+	Serial.println();
 }
