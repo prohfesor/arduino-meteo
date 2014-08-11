@@ -55,6 +55,10 @@ static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
 byte Ethernet::buffer[700];
 
 
+//sensor vars
+float t, t2, h, a, p;
+
+
 void setup() {
 	Serial.begin(9600);
 	
@@ -80,9 +84,9 @@ void loop() {
 
 	// Reading DHT temperature or humidity takes about 250 milliseconds!
 	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-	float h = dht.readHumidity();
+	h = dht.readHumidity();
 	// Read temperature as Celsius
-	float t = dht.readTemperature();
+	t = dht.readTemperature();
 
 	// Check if any reads failed and exit early (to try again).
 	if (isnan(h) || isnan(t)) {
@@ -101,11 +105,11 @@ void loop() {
 
 	//BMP sensor
 	//read alt
-	float a = bmp.readAltitude();
+	a = bmp.readAltitude();
 	//read pressure
-	float p = bmp.readPressure();
+	p = bmp.readPressure();
 	//read temp (baro)
-	float t2 = bmp.readTemperature();
+	t2 = bmp.readTemperature();
 
 	// Check if any reads failed and exit early (to try again).
 	if (isnan(a) || isnan(p) || isnan(t2)) {
