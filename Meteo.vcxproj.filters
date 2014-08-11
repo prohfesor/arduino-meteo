@@ -33,12 +33,42 @@
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ethernet\enc28j60.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ethernet\EtherCard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ethernet\net.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DHT.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Adafruit_BMP085.cpp">
+    <ClCompile Include="E:\Arduino\libraries\SPI\SPI.cpp">
       <Filter>Header Files</Filter>
     </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\SPI\SPI.cpp">
+    <ClCompile Include="ethernet\webutil.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\dhcp.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\dns.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\enc28j60.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\EtherCard.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\tcpip.cpp">
+      <Filter>Header Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ethernet\udpserver.cpp">
       <Filter>Header Files</Filter>
     </ClCompile>
   </ItemGroup>

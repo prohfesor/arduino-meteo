@@ -6,6 +6,8 @@
 #include "Wire.h"
 #include "Adafruit_BMP085.h"
 
+#include "EtherCard.h"
+
 #define DHTPIN 3     // what pin we're connected to
 
 // Uncomment whatever type you're using!
@@ -49,6 +51,8 @@ BSD license, all text above must be included in any redistribution
 Adafruit_BMP085 bmp;
 
 
+static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
+byte Ethernet::buffer[700];
 
 
 void setup() {
@@ -61,7 +65,14 @@ void setup() {
 	bmp.begin();
 
 	Serial.println("Ethernet starting");
+	if (ether.begin(sizeof Ethernet::buffer, mac) == 0)
+		Serial.println(F("Failed to access Ethernet controller"));
+	Serial.println(F("Setting up DHCP"));
+	if (!ether.dhcpSetup())
+		Serial.println(F("DHCP failed"));
+	ether.printIp("My IP: ", ether.myip);
 }
+
 
 void loop() {
 	// Wait a few seconds between measurements.

@@ -45,9 +45,5 @@ extern "C" void __cxa_pure_virtual() {;}
 #include "e:\Arduino\hardware\arduino\cores\arduino\arduino.h"
 #include "e:\Arduino\hardware\arduino\variants\eightanaloginputs\pins_arduino.h" 
 #include "C:\Users\Prof\Documents\Arduino\Meteo\Meteo.ino"
-#include "C:\Users\Prof\Documents\Arduino\Meteo\Adafruit_BMP085.cpp"
-#include "C:\Users\Prof\Documents\Arduino\Meteo\Adafruit_BMP085.h"
-#include "C:\Users\Prof\Documents\Arduino\Meteo\DHT.cpp"
-#include "C:\Users\Prof\Documents\Arduino\Meteo\DHT.h"
 #include "C:\Users\Prof\Documents\Arduino\Meteo\resource.h"
 #endif
