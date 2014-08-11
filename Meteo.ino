@@ -6,9 +6,6 @@
 #include "Wire.h"
 #include "Adafruit_BMP085.h"
 
-#include "SPI.h"
-#include "Ethernet.h"
-
 #define DHTPIN 3     // what pin we're connected to
 
 // Uncomment whatever type you're using!
@@ -51,6 +48,9 @@ BSD license, all text above must be included in any redistribution
 ****************************************************/
 Adafruit_BMP085 bmp;
 
+
+
+
 void setup() {
 	Serial.begin(9600);
 	
@@ -59,6 +59,8 @@ void setup() {
 	
 	Serial.println("BMPxxx starting");
 	bmp.begin();
+
+	Serial.println("Ethernet starting");
 }
 
 void loop() {

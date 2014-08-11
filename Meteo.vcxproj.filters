@@ -33,36 +33,6 @@
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DHT.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\Ethernet.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\utility\socket.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\utility\w5100.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\Dhcp.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\Dns.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\EthernetClient.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\EthernetServer.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\EthernetUdp.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
-    <ClInclude Include="E:\Arduino\libraries\Ethernet\util.h">
-      <Filter>Header Files\ethernet</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Adafruit_BMP085.cpp">
@@ -70,33 +40,6 @@
     </ClCompile>
     <ClCompile Include="E:\Arduino\libraries\SPI\SPI.cpp">
       <Filter>Header Files</Filter>
-    </ClCompile>
-    <ClCompile Include="DHT.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\Ethernet.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\utility\socket.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\utility\w5100.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\Dhcp.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\Dns.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\EthernetClient.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\EthernetServer.cpp">
-      <Filter>Header Files\ethernet</Filter>
-    </ClCompile>
-    <ClCompile Include="E:\Arduino\libraries\Ethernet\EthernetUdp.cpp">
-      <Filter>Header Files\ethernet</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
