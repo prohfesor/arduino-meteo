@@ -65,7 +65,6 @@ BufferFiller bfill;
 char website[] PROGMEM = "narodmon.ru";
 uint16_t nSourcePort = 8888;
 uint16_t nDestinationPort = 8283;
-uint8_t ipDestinationAddress[4] = { 213, 133, 98, 98 };
 
 
 //sensor vars
@@ -102,8 +101,12 @@ void setup() {
 	ether.printIp("Gateway:\t", ether.gwip);
 	Serial.println();
 
-	ether.dnsLookup(website);
-	ether.printIp("narodmon.ru server: ", ether.hisip);
+	Serial.print("Looking for narodmon.ru server: ");
+	if (!ether.dnsLookup(website)){
+		Serial.println("DNS failed");
+		ether.parseIp(ether.hisip, "91.122.49.168");
+	}
+	ether.printIp("", ether.hisip);
 
 	Serial.println();
 }
@@ -111,7 +114,7 @@ void setup() {
 
 void loop() {
 	// Wait a few seconds between measurements.
-	delay(4000);
+	delay(5000);
 
 	// Reading DHT temperature or humidity takes about 250 milliseconds!
 	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -160,16 +163,34 @@ void loop() {
 	Serial.println();
 
 	//LAN narodmon
-	char payload[] = "#74-69-68-67-66-01#Девайс\n#74696867660101#22#t1\n##";
+	Serial.println("Push to narodmon");
+	String message = 
+				"#74-69-68-67-66-01#Meteo\n"
+				"#74696867660101#%T1%#Temp1\n"
+				"#74696867660102#%T2%#Temp2\n"
+				"#74696867660103#%H%#Humidity\n"
+				"#74696867660104#%P%#Pressure\n"
+				"##";
+	char buf[7];
+	dtostrf(t, 7, 2, buf);
+	message.replace("T1", buf);
+	dtostrf(t2, 7, 2, buf);
+	message.replace("T2", buf);
+	dtostrf(h, 7, 2, buf);
+	message.replace("H", buf);
+	char payload[message.length() + 1];
+	message.toCharArray(payload, message.length() + 1);
 	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
 
 	//Web server
+	/*
 	word len = ether.packetReceive();
 	word pos = ether.packetLoop(len);
 	if (pos) {
 		Serial.println("Sending web page");
 		ether.httpServerReply(homePage()); // send web page data
 	}
+	*/
 }
 
 
