@@ -73,10 +73,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Adafruit_BMP085.h" />
-    <ClInclude Include="DHT.h">
-      <FileType>CppCode</FileType>
-    </ClInclude>
     <ClInclude Include="E:\Arduino\libraries\SPI\SPI.h" />
     <ClInclude Include="ethernet\enc28j60.h" />
     <ClInclude Include="ethernet\EtherCard.h" />

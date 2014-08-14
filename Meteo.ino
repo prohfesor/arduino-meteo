@@ -53,6 +53,19 @@ Adafruit_BMP085 bmp;
 
 static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
 byte Ethernet::buffer[700];
+BufferFiller bfill;
+
+// Finite-State Machine states
+#define STATUS_IDLE                   0
+#define STATUS_WAITING_FOR_PUBLIC_IP  1
+#define STATUS_NOIP_NEEDS_UPDATE      2
+#define STATUS_WAITING_FOR_NOIP       3
+#define STATUS_ERROR                  99
+
+char website[] PROGMEM = "narodmon.ru";
+uint16_t nSourcePort = 8888;
+uint16_t nDestinationPort = 8283;
+uint8_t ipDestinationAddress[4] = { 213, 133, 98, 98 };
 
 
 //sensor vars
@@ -74,7 +87,25 @@ void setup() {
 	Serial.println(F("Setting up DHCP"));
 	if (!ether.dhcpSetup())
 		Serial.println(F("DHCP failed"));
+
 	ether.printIp("My IP: ", ether.myip);
+	ether.printIp("GW:  ", ether.gwip);
+	ether.printIp("DNS: ", ether.dnsip);
+
+	if (!ether.dhcpSetup())
+		Serial.println(F("Failed to get configuration from DHCP"));
+	else
+		Serial.println(F("DHCP configuration done"));
+
+	ether.printIp("IP Address:\t", ether.myip);
+	ether.printIp("Netmask:\t", ether.netmask);
+	ether.printIp("Gateway:\t", ether.gwip);
+	Serial.println();
+
+	ether.dnsLookup(website);
+	ether.printIp("narodmon.ru server: ", ether.hisip);
+
+	Serial.println();
 }
 
 
@@ -117,7 +148,7 @@ void loop() {
 		return;
 	}
 
-	//output
+	//Output
 	Serial.print("Pressure: ");
 	Serial.print(p);
 	Serial.print("Pa\tAltitude: ");
@@ -127,4 +158,41 @@ void loop() {
 	Serial.print(t2);
 	Serial.print("*C");
 	Serial.println();
+
+	//LAN narodmon
+	char payload[] = "#74-69-68-67-66-01#Девайс\n#74696867660101#22#t1\n##";
+	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
+
+	//Web server
+	word len = ether.packetReceive();
+	word pos = ether.packetLoop(len);
+	if (pos) {
+		Serial.println("Sending web page");
+		ether.httpServerReply(homePage()); // send web page data
+	}
+}
+
+
+static word homePage() {
+	long t = millis() / 1000;
+	word h = t / 3600;
+	byte m = (t / 60) % 60;
+	byte s = t % 60;
+	bfill = ether.tcpOffset();
+	bfill.emit_p(PSTR(
+		"HTTP/1.0 200 OK\r\n"
+		"Content-Type: text/html\r\n"
+		"Pragma: no-cache\r\n"
+		"\r\n"
+		"<meta http-equiv='refresh' content='1'/>"
+		"<title>RBBB server</title>"
+		"<h1>$D$D:$D$D:$D$D</h1>"
+		"<div>"
+		"Temperature: $F <br>"
+		"Humidity: $F <br>"
+		"Pressure: $F "
+		"</div>"),
+		h / 10, h % 10, m / 10, m % 10, s / 10, s % 10 ,
+		t, h, p);
+	return bfill.position();
 }

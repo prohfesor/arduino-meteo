@@ -24,9 +24,6 @@
     <ClInclude Include="Visual Micro\.Meteo.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Adafruit_BMP085.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="E:\Arduino\libraries\SPI\SPI.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -40,9 +37,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="ethernet\net.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DHT.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
