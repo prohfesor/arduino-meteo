@@ -52,15 +52,11 @@ Adafruit_BMP085 bmp;
 
 //LAN vars
 static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
-String sMac;
 byte Ethernet::buffer[700];
 Stash stash;
 byte session;
 char website[] PROGMEM = "narodmon.ru";
-//static byte hisip[] = { 91, 122, 49, 168 };
-uint16_t nSourcePort = 8888;
-uint16_t nDestinationPort = 8283;
-
+static byte webip[] = { 91, 122, 49, 168 };
 
 
 //sensor vars
@@ -83,21 +79,13 @@ void setup() {
 	ethStart();
 
 	Serial.println();
-
-	sMac = "";
-	for (int k = 0; k<sizeof(mac) / sizeof(byte); k++)
-	{
-		char msg[3];
-		sprintf(msg, "%02X", mac[k]);
-		//if (macstring!="#") macstring+="-";
-		sMac += msg;
-	}
 }
 
 
 void loop() {
 	//if correct answer is not received then re-initialize ethernet module
-	if (res > 220){
+	//3000 res = 5mins
+	if (res > 3000){
 		ethStart();
 	}
 	res = res+1;
@@ -180,7 +168,7 @@ void readBmp() {
 
 void ethStart() {
 	for (;;){ // keep trying until you succeed 
-		Serial.println("Reseting Ethernet...");
+		Serial.println("Power off Ethernet");
 		//Reinitialize ethernet module
 		pinMode(5, OUTPUT);
 		digitalWrite(5, LOW);
@@ -203,8 +191,10 @@ void ethStart() {
 		ether.printIp("GW:  ", ether.gwip);
 		ether.printIp("DNS: ", ether.dnsip);
 
-		if (!ether.dnsLookup(website))
+		if (!ether.dnsLookup(website)) {
 			Serial.println("DNS failed");
+			ether.copyIp(ether.hisip, webip);
+		}
 
 		ether.printIp("SRV: ", ether.hisip);
 
@@ -218,15 +208,27 @@ void ethStart() {
 
 
 void sendTcp() {
+	char ssm[] = "746968676601";
+
 	Serial.println("Send POST to narodmon");
 	byte sd = stash.create();
 	stash.print("ID=");
-	stash.print(sMac);
+	stash.print(ssm);
 	stash.print("&");
-	stash.print(sMac);
+	stash.print(ssm);
 	stash.print("01");
 	stash.print("=");
 	stash.print(t);
+	stash.print("&");
+	stash.print(ssm);
+	stash.print("02");
+	stash.print("=");
+	stash.print(t2);
+	stash.print("&");
+	stash.print(ssm);
+	stash.print("04");
+	stash.print("=");
+	stash.print(p);
 	stash.print("&name=Meteo");
 
 	stash.save();
