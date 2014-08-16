@@ -41,7 +41,6 @@ extern "C" void __cxa_pure_virtual() {;}
 
 //
 //
-static word homePage();
 
 #include "e:\Arduino\hardware\arduino\cores\arduino\arduino.h"
 #include "e:\Arduino\hardware\arduino\variants\eightanaloginputs\pins_arduino.h" 

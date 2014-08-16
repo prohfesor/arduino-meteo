@@ -55,13 +55,6 @@ static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
 byte Ethernet::buffer[700];
 BufferFiller bfill;
 
-// Finite-State Machine states
-#define STATUS_IDLE                   0
-#define STATUS_WAITING_FOR_PUBLIC_IP  1
-#define STATUS_NOIP_NEEDS_UPDATE      2
-#define STATUS_WAITING_FOR_NOIP       3
-#define STATUS_ERROR                  99
-
 char website[] PROGMEM = "narodmon.ru";
 uint16_t nSourcePort = 8888;
 uint16_t nDestinationPort = 8283;
@@ -87,19 +80,12 @@ void setup() {
 	if (!ether.dhcpSetup())
 		Serial.println(F("DHCP failed"));
 
-	ether.printIp("My IP: ", ether.myip);
-	ether.printIp("GW:  ", ether.gwip);
-	ether.printIp("DNS: ", ether.dnsip);
-
-	if (!ether.dhcpSetup())
-		Serial.println(F("Failed to get configuration from DHCP"));
-	else
-		Serial.println(F("DHCP configuration done"));
-
 	ether.printIp("IP Address:\t", ether.myip);
 	ether.printIp("Netmask:\t", ether.netmask);
 	ether.printIp("Gateway:\t", ether.gwip);
 	Serial.println();
+	
+	ether.packetLoop(ether.packetReceive());
 
 	Serial.print("Looking for narodmon.ru server: ");
 	if (!ether.dnsLookup(website)){
@@ -113,6 +99,8 @@ void setup() {
 
 
 void loop() {
+	//word pos = ether.packetLoop(ether.packetReceive());
+
 	// Wait a few seconds between measurements.
 	delay(5000);
 
@@ -164,13 +152,10 @@ void loop() {
 
 	//LAN narodmon
 	Serial.println("Push to narodmon");
-	String message = 
-				"#74-69-68-67-66-01#Meteo\n"
-				"#74696867660101#%T1%#Temp1\n"
-				"#74696867660102#%T2%#Temp2\n"
-				"#74696867660103#%H%#Humidity\n"
-				"#74696867660104#%P%#Pressure\n"
-				"##";
+	String message = "#74-69-68-67-66-01#Meteo\n#74696867660101#%T1%#Temp1\n";
+	message += "#74696867660102#%T2%#Temp2\n#74696867660103#%H%#Humidity\n";
+	message += "#74696867660104#%P%#Pressure\n##";
+	/*
 	char buf[7];
 	dtostrf(t, 7, 2, buf);
 	message.replace("T1", buf);
@@ -178,42 +163,10 @@ void loop() {
 	message.replace("T2", buf);
 	dtostrf(h, 7, 2, buf);
 	message.replace("H", buf);
-	char payload[message.length() + 1];
-	message.toCharArray(payload, message.length() + 1);
-	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
-
-	//Web server
-	/*
-	word len = ether.packetReceive();
-	word pos = ether.packetLoop(len);
-	if (pos) {
-		Serial.println("Sending web page");
-		ether.httpServerReply(homePage()); // send web page data
-	}
 	*/
-}
+	int len = message.length() +1;
+	char payload[len];
+	message.toCharArray(payload, len);
 
-
-static word homePage() {
-	long t = millis() / 1000;
-	word h = t / 3600;
-	byte m = (t / 60) % 60;
-	byte s = t % 60;
-	bfill = ether.tcpOffset();
-	bfill.emit_p(PSTR(
-		"HTTP/1.0 200 OK\r\n"
-		"Content-Type: text/html\r\n"
-		"Pragma: no-cache\r\n"
-		"\r\n"
-		"<meta http-equiv='refresh' content='1'/>"
-		"<title>RBBB server</title>"
-		"<h1>$D$D:$D$D:$D$D</h1>"
-		"<div>"
-		"Temperature: $F <br>"
-		"Humidity: $F <br>"
-		"Pressure: $F "
-		"</div>"),
-		h / 10, h % 10, m / 10, m % 10, s / 10, s % 10 ,
-		t, h, p);
-	return bfill.position();
+	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
 }
