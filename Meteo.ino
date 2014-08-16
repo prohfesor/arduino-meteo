@@ -52,10 +52,12 @@ Adafruit_BMP085 bmp;
 
 
 static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
+static String sMac = "746968676601";
 byte Ethernet::buffer[700];
-BufferFiller bfill;
+Stash stash;
 
 char website[] PROGMEM = "narodmon.ru";
+static byte hisip[] = { 91, 122, 49, 168 };
 uint16_t nSourcePort = 8888;
 uint16_t nDestinationPort = 8283;
 
@@ -66,6 +68,7 @@ float t, t2, h, a, p;
 
 void setup() {
 	Serial.begin(9600);
+	//delay(1000);
 	
 	Serial.println("DHTxx starting");
 	dht.begin();
@@ -74,37 +77,30 @@ void setup() {
 	bmp.begin();
 
 	Serial.println("Ethernet starting");
-	if (ether.begin(sizeof Ethernet::buffer, mac) == 0)
-		Serial.println(F("Failed to access Ethernet controller"));
-	Serial.println(F("Setting up DHCP"));
-	if (!ether.dhcpSetup())
-		Serial.println(F("DHCP failed"));
-
-	ether.printIp("IP Address:\t", ether.myip);
-	ether.printIp("Netmask:\t", ether.netmask);
-	ether.printIp("Gateway:\t", ether.gwip);
-	Serial.println();
-	
-	ether.packetLoop(ether.packetReceive());
-
-	Serial.print("Looking for narodmon.ru server: ");
-	if (!ether.dnsLookup(website)){
-		Serial.println("DNS failed");
-		ether.parseIp(ether.hisip, "91.122.49.168");
-	}
-	ether.printIp("", ether.hisip);
+	//ethStart();
 
 	Serial.println();
 }
 
 
 void loop() {
-	//word pos = ether.packetLoop(ether.packetReceive());
-
 	// Wait a few seconds between measurements.
 	delay(5000);
 
-	// Reading DHT temperature or humidity takes about 250 milliseconds!
+	//DHT sensor - takes about 250 milliseconds!
+	readDht();
+
+	//BMP sensor
+	readBmp();
+
+	//LAN narodmon
+	//sendUdp();
+	//sendTcp();
+}
+
+
+
+void readDht() {
 	// Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
 	h = dht.readHumidity();
 	// Read temperature as Celsius
@@ -124,13 +120,13 @@ void loop() {
 	Serial.print(t);
 	Serial.print("*C\t");
 	Serial.println();
+}
 
-	//BMP sensor
-	//read alt
+
+
+void readBmp() {
 	a = bmp.readAltitude();
-	//read pressure
 	p = bmp.readPressure();
-	//read temp (baro)
 	t2 = bmp.readTemperature();
 
 	// Check if any reads failed and exit early (to try again).
@@ -149,12 +145,52 @@ void loop() {
 	Serial.print(t2);
 	Serial.print("*C");
 	Serial.println();
+}
 
-	//LAN narodmon
+
+
+void ethStart() {
+	if (ether.begin(sizeof Ethernet::buffer, mac) == 0)
+		Serial.println("Failed to access Ethernet controller");
+	if (!ether.dhcpSetup())
+		Serial.println("DHCP failed");
+
+	/*
+	//overwrite DNS with google's if there are problems with DNS setup
+	static byte dnsip[] = { 8, 8, 8, 8 };
+	ether.copyIp(ether.dnsip, dnsip);
+	*/
+
+	ether.printIp("My IP: ", ether.myip);
+	ether.printIp("GW IP: ", ether.gwip);
+	ether.printIp("DNS IP: ", ether.dnsip);
+
+	/*
+	Serial.println("Looking for Gateway");
+	while (ether.clientWaitingGw())
+	ether.packetLoop(ether.packetReceive());
+	Serial.println("Gateway found");
+	*/
+
+	Serial.print("Looking for narodmon.ru server: ");
+	if (!ether.dnsLookup(website)){
+		Serial.println("DNS failed");
+		ether.parseIp(ether.hisip, "91.122.49.168"); //92.39.235.156
+	}
+
+	//ether.copyIp(ether.hisip, hisip);
+
+	ether.printIp("Server: ", ether.hisip);
+}
+
+
+
+void sendUdp() {
 	Serial.println("Push to narodmon");
 	String message = "#74-69-68-67-66-01#Meteo\n#74696867660101#%T1%#Temp1\n";
 	message += "#74696867660102#%T2%#Temp2\n#74696867660103#%H%#Humidity\n";
 	message += "#74696867660104#%P%#Pressure\n##";
+
 	/*
 	char buf[7];
 	dtostrf(t, 7, 2, buf);
@@ -164,9 +200,38 @@ void loop() {
 	dtostrf(h, 7, 2, buf);
 	message.replace("H", buf);
 	*/
+
 	int len = message.length() +1;
-	char payload[len];
+	char payload[200];
 	message.toCharArray(payload, len);
 
 	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
+}
+
+
+
+void sendTcp() {
+	Serial.println("Send POST to narodmon");
+	byte sd = stash.create();
+	stash.print("ID=");
+	stash.print(sMac);
+	stash.print("&");
+	stash.print(sMac);
+	stash.print("01");
+	stash.print("=");
+	stash.print(t);
+	//stash.print("&name=Meteo");
+
+	stash.save();
+	// generate the header with payload - note that the stash size is used,
+	// and that a "stash descriptor" is passed in as argument using "$H"
+	Stash::prepare(PSTR("POST http://narodmon.ru/post.php HTTP/1.0" "\r\n"
+		"Host: narodmon.ru" "\r\n"
+		"Content-Length: $D" "\r\n"
+		"\r\n"
+		"$H"),
+		stash.size(), sd);
+	// send the packet - this also releases all stash buffers once done
+	ether.tcpSend();
+	Serial.println("Done");
 }

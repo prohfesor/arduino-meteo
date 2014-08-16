@@ -41,6 +41,11 @@ extern "C" void __cxa_pure_virtual() {;}
 
 //
 //
+void readDht();
+void readBmp();
+void ethStart();
+void sendUdp();
+void sendTcp();
 
 #include "e:\Arduino\hardware\arduino\cores\arduino\arduino.h"
 #include "e:\Arduino\hardware\arduino\variants\eightanaloginputs\pins_arduino.h" 
