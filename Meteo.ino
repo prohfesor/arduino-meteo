@@ -50,25 +50,28 @@ BSD license, all text above must be included in any redistribution
 ****************************************************/
 Adafruit_BMP085 bmp;
 
-
+//LAN vars
 static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
-static String sMac = "746968676601";
+String sMac;
 byte Ethernet::buffer[700];
 Stash stash;
-
+byte session;
 char website[] PROGMEM = "narodmon.ru";
-static byte hisip[] = { 91, 122, 49, 168 };
+//static byte hisip[] = { 91, 122, 49, 168 };
 uint16_t nSourcePort = 8888;
 uint16_t nDestinationPort = 8283;
+
 
 
 //sensor vars
 float t, t2, h, a, p;
 
+//timing variable
+int res = 0;
+
 
 void setup() {
 	Serial.begin(9600);
-	//delay(1000);
 	
 	Serial.println("DHTxx starting");
 	dht.begin();
@@ -77,25 +80,51 @@ void setup() {
 	bmp.begin();
 
 	Serial.println("Ethernet starting");
-	//ethStart();
+	ethStart();
 
 	Serial.println();
+
+	sMac = "";
+	for (int k = 0; k<sizeof(mac) / sizeof(byte); k++)
+	{
+		char msg[3];
+		sprintf(msg, "%02X", mac[k]);
+		//if (macstring!="#") macstring+="-";
+		sMac += msg;
+	}
 }
 
 
 void loop() {
-	// Wait a few seconds between measurements.
-	delay(5000);
+	//if correct answer is not received then re-initialize ethernet module
+	if (res > 220){
+		ethStart();
+	}
+	res = res+1;
 
-	//DHT sensor - takes about 250 milliseconds!
-	readDht();
+	//listen
+	ether.packetLoop(ether.packetReceive());
 
-	//BMP sensor
-	readBmp();
+	//200 res = 10 seconds (50ms each res)
+	if (res == 200) {
+		//DHT sensor - takes about 250 milliseconds!
+		readDht();
 
-	//LAN narodmon
-	//sendUdp();
-	//sendTcp();
+		//BMP sensor
+		readBmp();
+
+		//LAN narodmon
+		//sendUdp();
+		sendTcp();
+	}
+
+	const char* reply = ether.tcpReply(session);
+	if (reply != 0) {
+		res = 0;
+		Serial.println(reply);
+	}
+
+	delay(50);
 }
 
 
@@ -150,63 +179,41 @@ void readBmp() {
 
 
 void ethStart() {
-	if (ether.begin(sizeof Ethernet::buffer, mac) == 0)
-		Serial.println("Failed to access Ethernet controller");
-	if (!ether.dhcpSetup())
-		Serial.println("DHCP failed");
+	for (;;){ // keep trying until you succeed 
+		Serial.println("Reseting Ethernet...");
+		//Reinitialize ethernet module
+		pinMode(5, OUTPUT);
+		digitalWrite(5, LOW);
+		delay(1000);
+		digitalWrite(5, HIGH);
+		delay(500);
+		Serial.println("Reseting Ethernet...");
 
-	/*
-	//overwrite DNS with google's if there are problems with DNS setup
-	static byte dnsip[] = { 8, 8, 8, 8 };
-	ether.copyIp(ether.dnsip, dnsip);
-	*/
+		if (ether.begin(sizeof Ethernet::buffer, mac) == 0){
+			Serial.println("Failed to access Ethernet controller");
+			continue;
+		}
 
-	ether.printIp("My IP: ", ether.myip);
-	ether.printIp("GW IP: ", ether.gwip);
-	ether.printIp("DNS IP: ", ether.dnsip);
+		if (!ether.dhcpSetup()){
+			Serial.println("DHCP failed");
+			continue;
+		}
 
-	/*
-	Serial.println("Looking for Gateway");
-	while (ether.clientWaitingGw())
-	ether.packetLoop(ether.packetReceive());
-	Serial.println("Gateway found");
-	*/
+		ether.printIp("IP:  ", ether.myip);
+		ether.printIp("GW:  ", ether.gwip);
+		ether.printIp("DNS: ", ether.dnsip);
 
-	Serial.print("Looking for narodmon.ru server: ");
-	if (!ether.dnsLookup(website)){
-		Serial.println("DNS failed");
-		ether.parseIp(ether.hisip, "91.122.49.168"); //92.39.235.156
+		if (!ether.dnsLookup(website))
+			Serial.println("DNS failed");
+
+		ether.printIp("SRV: ", ether.hisip);
+
+		//reset init value
+		res = 0;
+		break;
 	}
-
-	//ether.copyIp(ether.hisip, hisip);
-
-	ether.printIp("Server: ", ether.hisip);
 }
 
-
-
-void sendUdp() {
-	Serial.println("Push to narodmon");
-	String message = "#74-69-68-67-66-01#Meteo\n#74696867660101#%T1%#Temp1\n";
-	message += "#74696867660102#%T2%#Temp2\n#74696867660103#%H%#Humidity\n";
-	message += "#74696867660104#%P%#Pressure\n##";
-
-	/*
-	char buf[7];
-	dtostrf(t, 7, 2, buf);
-	message.replace("T1", buf);
-	dtostrf(t2, 7, 2, buf);
-	message.replace("T2", buf);
-	dtostrf(h, 7, 2, buf);
-	message.replace("H", buf);
-	*/
-
-	int len = message.length() +1;
-	char payload[200];
-	message.toCharArray(payload, len);
-
-	ether.sendUdp(payload, sizeof(payload), nSourcePort, ether.hisip, nDestinationPort);
-}
 
 
 
@@ -220,7 +227,7 @@ void sendTcp() {
 	stash.print("01");
 	stash.print("=");
 	stash.print(t);
-	//stash.print("&name=Meteo");
+	stash.print("&name=Meteo");
 
 	stash.save();
 	// generate the header with payload - note that the stash size is used,
