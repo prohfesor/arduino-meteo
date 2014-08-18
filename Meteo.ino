@@ -8,55 +8,23 @@
 
 #include "EtherCard.h"
 
-#define DHTPIN 3     // what pin we're connected to
-
-// Uncomment whatever type you're using!
-//#define DHTTYPE DHT11   // DHT 11 
-#define DHTTYPE DHT22   // DHT 22  (AM2302)
-//#define DHTTYPE DHT21   // DHT 21 (AM2301)
-
-// Connect pin 1 (on the left) of the sensor to +5V
-// NOTE: If using a board with 3.3V logic like an Arduino Due connect pin 1
-// to 3.3V instead of 5V!
-// Connect pin 2 of the sensor to whatever your DHTPIN is
-// Connect pin 4 (on the right) of the sensor to GROUND
-// Connect a 10K resistor from pin 2 (data) to pin 1 (power) of the sensor
-
-// Initialize DHT sensor for normal 16mhz Arduino
-//DHT dht(DHTPIN, DHTTYPE);
-// NOTE: For working with a faster chip, like an Arduino Due or Teensy, you
-// might need to increase the threshold for cycle counts considered a 1 or 0.
-// You can do this by passing a 3rd parameter for this threshold.  It's a bit
-// of fiddling to find the right value, but in general the faster the CPU the
-// higher the value.  The default for a 16mhz AVR is a value of 6.  For an
-// Arduino Due that runs at 84mhz a value of 30 works.
-// Example to initialize DHT sensor for Arduino Due:
+#define DHTPIN 3
+#define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE, 7);
 
-/***************************************************
-This is an example for the BMP085 Barometric Pressure & Temp Sensor
-
-Designed specifically to work with the Adafruit BMP085 Breakout
-----> https://www.adafruit.com/products/391
-
-These displays use I2C to communicate, 2 pins are required to
-interface
-Adafruit invests time and resources providing this open source code,
-please support Adafruit and open-source hardware by purchasing
-products from Adafruit!
-
-Written by Limor Fried/Ladyada for Adafruit Industries.
-BSD license, all text above must be included in any redistribution
-****************************************************/
 Adafruit_BMP085 bmp;
 
 //LAN vars
 static byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
+static byte webip[] = { 91, 122, 49, 168 };
+char website[] PROGMEM = "narodmon.ru";
 byte Ethernet::buffer[700];
 Stash stash;
 byte session;
-char website[] PROGMEM = "narodmon.ru";
-static byte webip[] = { 91, 122, 49, 168 };
+bool part = 0;
+long lastPush, lastEth;
+#define PUSH_INTERVAL 5000;
+#define ETH_INTERVAL  100000;
 
 
 //sensor vars
@@ -85,7 +53,8 @@ void setup() {
 void loop() {
 	//if correct answer is not received then re-initialize ethernet module
 	//3000 res = 5mins
-	if (res > 3000){
+	long chk = lastEth + ETH_INTERVAL;
+	if (res > 3000 || millis() > chk){
 		ethStart();
 	}
 	res = res+1;
@@ -93,8 +62,10 @@ void loop() {
 	//listen
 	ether.packetLoop(ether.packetReceive());
 
-	//200 res = 10 seconds (50ms each res)
-	if (res == 200) {
+	chk = lastPush + PUSH_INTERVAL;
+	if (millis() > chk) {
+		lastPush = millis();
+
 		//DHT sensor - takes about 250 milliseconds!
 		readDht();
 
@@ -102,7 +73,6 @@ void loop() {
 		readBmp();
 
 		//LAN narodmon
-		//sendUdp();
 		sendTcp();
 	}
 
@@ -192,7 +162,7 @@ void ethStart() {
 		ether.printIp("DNS: ", ether.dnsip);
 
 		if (!ether.dnsLookup(website)) {
-			Serial.println("DNS failed");
+			Serial.println("DNS failed. Fallback to hardcoded IP.");
 			ether.copyIp(ether.hisip, webip);
 		}
 
@@ -219,17 +189,32 @@ void sendTcp() {
 	stash.print("01");
 	stash.print("=");
 	stash.print(t);
-	stash.print("&");
-	stash.print(ssm);
-	stash.print("02");
-	stash.print("=");
-	stash.print(t2);
-	stash.print("&");
-	stash.print(ssm);
-	stash.print("04");
-	stash.print("=");
-	stash.print(p);
+	if (part){
+		stash.print("&");
+		stash.print(ssm);
+		stash.print("02");
+		stash.print("=");
+		stash.print(t2);
+		stash.print("&");
+		stash.print(ssm);
+		stash.print("04");
+		stash.print("=");
+		stash.print(p);
+	}
+	else {
+		stash.print("&");
+		stash.print(ssm);
+		stash.print("03");
+		stash.print("=");
+		stash.print(h);
+		stash.print("&");
+		stash.print(ssm);
+		stash.print("05");
+		stash.print("=");
+		stash.print(a);
+	}
 	stash.print("&name=Meteo");
+	part++;
 
 	stash.save();
 	// generate the header with payload - note that the stash size is used,
