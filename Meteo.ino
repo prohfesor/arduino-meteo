@@ -24,7 +24,7 @@ byte session;
 bool part = 0;
 long lastPush, lastEth;
 #define PUSH_INTERVAL 5000;
-#define ETH_INTERVAL  100000;
+#define ETH_INTERVAL  600000;
 
 
 //sensor vars
@@ -53,8 +53,9 @@ void setup() {
 void loop() {
 	//if correct answer is not received then re-initialize ethernet module
 	//3000 res = 5mins
-	long chk = lastEth + ETH_INTERVAL;
-	if (res > 3000 || millis() > chk){
+	long chke = lastEth + ETH_INTERVAL;
+	if (millis() > chke){
+		lastEth = millis();
 		ethStart();
 	}
 	res = res+1;
@@ -62,7 +63,7 @@ void loop() {
 	//listen
 	ether.packetLoop(ether.packetReceive());
 
-	chk = lastPush + PUSH_INTERVAL;
+	long chk = lastPush + PUSH_INTERVAL;
 	if (millis() > chk) {
 		lastPush = millis();
 
@@ -144,7 +145,6 @@ void ethStart() {
 		digitalWrite(5, LOW);
 		delay(1000);
 		digitalWrite(5, HIGH);
-		delay(500);
 		Serial.println("Reseting Ethernet...");
 
 		if (ether.begin(sizeof Ethernet::buffer, mac) == 0){
