@@ -5,18 +5,24 @@
 
 #include "Wire.h"
 #include "Adafruit_BMP085.h"
+#include "SPI.h"
+#include "Ethernet.h"
 
+//sensor vars
 #define DHTPIN 3
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE, 7);
-
 Adafruit_BMP085 bmp;
 
 //LAN vars
+byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
 long lastPush, lastEth;
+int EthernetResetPin = 2;
+EthernetClient client;
+
+//timings
 #define PUSH_INTERVAL 5000;
 #define ETH_INTERVAL  600000;
-
 
 //sensor vars
 float t, t2, h, a, p;
@@ -61,7 +67,6 @@ void loop() {
 		sendTcp();
 	}
 
-	//delay(50);
 }
 
 
@@ -116,7 +121,33 @@ void readBmp() {
 
 
 void ethStart() {
-	
+	/*
+	Serial.print("Reseting Ethernet... ");
+	pinMode(EthernetResetPin, OUTPUT);
+	digitalWrite(EthernetResetPin, LOW);
+	delay(100);
+	digitalWrite(EthernetResetPin, HIGH);
+	Serial.println("done");
+	delay(100);
+	*/
+
+	Serial.print("Receive DHCP... ");
+	if (Ethernet.begin(mac)) {
+		Serial.println("ok");
+		// try to congifure using IP address instead of DHCP:
+		//Ethernet.begin(mac, ip);
+		// print your local IP address:
+		Serial.print("My IP address: ");
+		IPAddress ip = Ethernet.localIP();
+		for (byte thisByte = 0; thisByte < 4; thisByte++) {
+			// print the value of each byte of the IP address:
+			Serial.print(ip[thisByte], DEC);
+			Serial.print(".");
+		}
+	}
+	else {
+		Serial.println("FAILED!");
+	}
 }
 
 
