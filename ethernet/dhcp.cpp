@@ -1,391 +1,480 @@
-// DHCP look-up functions based on the udp client
-// http://www.ietf.org/rfc/rfc2131.txt
-//
-// Author: Andrew Lindsay
-// Rewritten and optimized by Jean-Claude Wippler, http://jeelabs.org/
-//
-// Rewritten dhcpStateMachine by Chris van den Hooven
-// as to implement dhcp-renew when lease expires (jun 2012)
-//
-// Various modifications and bug fixes contributed by Victor Aprea (oct 2012)
-//
-// Copyright: GPL V2
-// See http://www.gnu.org/licenses/gpl.html
+// DHCP Library v0.3 - April 25, 2009
+// Author: Jordan Terrell - blog.jordanterrell.com
 
-//#define DHCPDEBUG
+#include "w5100.h"
 
-#include "EtherCard.h"
-#include "net.h"
+#include <string.h>
+#include <stdlib.h>
+#include "Dhcp.h"
+#include "Arduino.h"
+#include "util.h"
 
-#define gPB ether.buffer
+int DhcpClass::beginWithDHCP(uint8_t *mac, unsigned long timeout, unsigned long responseTimeout)
+{
+    _dhcpLeaseTime=0;
+    _dhcpT1=0;
+    _dhcpT2=0;
+    _lastCheck=0;
+    _timeout = timeout;
+    _responseTimeout = responseTimeout;
 
-#define DHCP_BOOTREQUEST 1
-#define DHCP_BOOTRESPONSE 2
+    // zero out _dhcpMacAddr
+    memset(_dhcpMacAddr, 0, 6); 
+    reset_DHCP_lease();
 
-// DHCP Message Type (option 53) (ref RFC 2132)
-#define DHCP_DISCOVER 1
-#define DHCP_OFFER 2
-#define DHCP_REQUEST 3
-#define DHCP_DECLINE 4
-#define DHCP_ACK 5
-#define DHCP_NAK 6
-#define DHCP_RELEASE 7
+    memcpy((void*)_dhcpMacAddr, (void*)mac, 6);
+    _dhcp_state = STATE_DHCP_START;
+    return request_DHCP_lease();
+}
 
-// DHCP States for access in applications (ref RFC 2131)
-enum {
-    DHCP_STATE_INIT,
-    DHCP_STATE_SELECTING,
-    DHCP_STATE_REQUESTING,
-    DHCP_STATE_BOUND,
-    DHCP_STATE_RENEWING,
-};
+void DhcpClass::reset_DHCP_lease(){
+    // zero out _dhcpSubnetMask, _dhcpGatewayIp, _dhcpLocalIp, _dhcpDhcpServerIp, _dhcpDnsServerIp
+    memset(_dhcpLocalIp, 0, 20);
+}
+
+//return:0 on error, 1 if request is sent and response is received
+int DhcpClass::request_DHCP_lease(){
+    
+    uint8_t messageType = 0;
+  
+    
+  
+    // Pick an initial transaction ID
+    _dhcpTransactionId = random(1UL, 2000UL);
+    _dhcpInitialTransactionId = _dhcpTransactionId;
+
+    _dhcpUdpSocket.stop();
+    if (_dhcpUdpSocket.begin(DHCP_CLIENT_PORT) == 0)
+    {
+      // Couldn't get a socket
+      return 0;
+    }
+    
+    presend_DHCP();
+    
+    int result = 0;
+    
+    unsigned long startTime = millis();
+    
+    while(_dhcp_state != STATE_DHCP_LEASED)
+    {
+        if(_dhcp_state == STATE_DHCP_START)
+        {
+            _dhcpTransactionId++;
+            
+            send_DHCP_MESSAGE(DHCP_DISCOVER, ((millis() - startTime) / 1000));
+            _dhcp_state = STATE_DHCP_DISCOVER;
+        }
+        else if(_dhcp_state == STATE_DHCP_REREQUEST){
+            _dhcpTransactionId++;
+            send_DHCP_MESSAGE(DHCP_REQUEST, ((millis() - startTime)/1000));
+            _dhcp_state = STATE_DHCP_REQUEST;
+        }
+        else if(_dhcp_state == STATE_DHCP_DISCOVER)
+        {
+            uint32_t respId;
+            messageType = parseDHCPResponse(_responseTimeout, respId);
+            if(messageType == DHCP_OFFER)
+            {
+                // We'll use the transaction ID that the offer came with,
+                // rather than the one we were up to
+                _dhcpTransactionId = respId;
+                send_DHCP_MESSAGE(DHCP_REQUEST, ((millis() - startTime) / 1000));
+                _dhcp_state = STATE_DHCP_REQUEST;
+            }
+        }
+        else if(_dhcp_state == STATE_DHCP_REQUEST)
+        {
+            uint32_t respId;
+            messageType = parseDHCPResponse(_responseTimeout, respId);
+            if(messageType == DHCP_ACK)
+            {
+                _dhcp_state = STATE_DHCP_LEASED;
+                result = 1;
+                //use default lease time if we didn't get it
+                if(_dhcpLeaseTime == 0){
+                    _dhcpLeaseTime = DEFAULT_LEASE;
+                }
+                //calculate T1 & T2 if we didn't get it
+                if(_dhcpT1 == 0){
+                    //T1 should be 50% of _dhcpLeaseTime
+                    _dhcpT1 = _dhcpLeaseTime >> 1;
+                }
+                if(_dhcpT2 == 0){
+                    //T2 should be 87.5% (7/8ths) of _dhcpLeaseTime
+                    _dhcpT2 = _dhcpT1 << 1;
+                }
+                _renewInSec = _dhcpT1;
+                _rebindInSec = _dhcpT2;
+            }
+            else if(messageType == DHCP_NAK)
+                _dhcp_state = STATE_DHCP_START;
+        }
+        
+        if(messageType == 255)
+        {
+            messageType = 0;
+            _dhcp_state = STATE_DHCP_START;
+        }
+        
+        if(result != 1 && ((millis() - startTime) > _timeout))
+            break;
+    }
+    
+    // We're done with the socket now
+    _dhcpUdpSocket.stop();
+    _dhcpTransactionId++;
+
+    return result;
+}
+
+void DhcpClass::presend_DHCP()
+{
+}
+
+void DhcpClass::send_DHCP_MESSAGE(uint8_t messageType, uint16_t secondsElapsed)
+{
+    uint8_t buffer[32];
+    memset(buffer, 0, 32);
+    IPAddress dest_addr( 255, 255, 255, 255 ); // Broadcast address
+
+    if (-1 == _dhcpUdpSocket.beginPacket(dest_addr, DHCP_SERVER_PORT))
+    {
+        // FIXME Need to return errors
+        return;
+    }
+
+    buffer[0] = DHCP_BOOTREQUEST;   // op
+    buffer[1] = DHCP_HTYPE10MB;     // htype
+    buffer[2] = DHCP_HLENETHERNET;  // hlen
+    buffer[3] = DHCP_HOPS;          // hops
+
+    // xid
+    unsigned long xid = htonl(_dhcpTransactionId);
+    memcpy(buffer + 4, &(xid), 4);
+
+    // 8, 9 - seconds elapsed
+    buffer[8] = ((secondsElapsed & 0xff00) >> 8);
+    buffer[9] = (secondsElapsed & 0x00ff);
+
+    // flags
+    unsigned short flags = htons(DHCP_FLAGSBROADCAST);
+    memcpy(buffer + 10, &(flags), 2);
+
+    // ciaddr: already zeroed
+    // yiaddr: already zeroed
+    // siaddr: already zeroed
+    // giaddr: already zeroed
+
+    //put data in W5100 transmit buffer
+    _dhcpUdpSocket.write(buffer, 28);
+
+    memset(buffer, 0, 32); // clear local buffer
+
+    memcpy(buffer, _dhcpMacAddr, 6); // chaddr
+
+    //put data in W5100 transmit buffer
+    _dhcpUdpSocket.write(buffer, 16);
+
+    memset(buffer, 0, 32); // clear local buffer
+
+    // leave zeroed out for sname && file
+    // put in W5100 transmit buffer x 6 (192 bytes)
+  
+    for(int i = 0; i < 6; i++) {
+        _dhcpUdpSocket.write(buffer, 32);
+    }
+  
+    // OPT - Magic Cookie
+    buffer[0] = (uint8_t)((MAGIC_COOKIE >> 24)& 0xFF);
+    buffer[1] = (uint8_t)((MAGIC_COOKIE >> 16)& 0xFF);
+    buffer[2] = (uint8_t)((MAGIC_COOKIE >> 8)& 0xFF);
+    buffer[3] = (uint8_t)(MAGIC_COOKIE& 0xFF);
+
+    // OPT - message type
+    buffer[4] = dhcpMessageType;
+    buffer[5] = 0x01;
+    buffer[6] = messageType; //DHCP_REQUEST;
+
+    // OPT - client identifier
+    buffer[7] = dhcpClientIdentifier;
+    buffer[8] = 0x07;
+    buffer[9] = 0x01;
+    memcpy(buffer + 10, _dhcpMacAddr, 6);
+
+    // OPT - host name
+    buffer[16] = hostName;
+    buffer[17] = strlen(HOST_NAME) + 6; // length of hostname + last 3 bytes of mac address
+    strcpy((char*)&(buffer[18]), HOST_NAME);
+
+    printByte((char*)&(buffer[24]), _dhcpMacAddr[3]);
+    printByte((char*)&(buffer[26]), _dhcpMacAddr[4]);
+    printByte((char*)&(buffer[28]), _dhcpMacAddr[5]);
+
+    //put data in W5100 transmit buffer
+    _dhcpUdpSocket.write(buffer, 30);
+
+    if(messageType == DHCP_REQUEST)
+    {
+        buffer[0] = dhcpRequestedIPaddr;
+        buffer[1] = 0x04;
+        buffer[2] = _dhcpLocalIp[0];
+        buffer[3] = _dhcpLocalIp[1];
+        buffer[4] = _dhcpLocalIp[2];
+        buffer[5] = _dhcpLocalIp[3];
+
+        buffer[6] = dhcpServerIdentifier;
+        buffer[7] = 0x04;
+        buffer[8] = _dhcpDhcpServerIp[0];
+        buffer[9] = _dhcpDhcpServerIp[1];
+        buffer[10] = _dhcpDhcpServerIp[2];
+        buffer[11] = _dhcpDhcpServerIp[3];
+
+        //put data in W5100 transmit buffer
+        _dhcpUdpSocket.write(buffer, 12);
+    }
+    
+    buffer[0] = dhcpParamRequest;
+    buffer[1] = 0x06;
+    buffer[2] = subnetMask;
+    buffer[3] = routersOnSubnet;
+    buffer[4] = dns;
+    buffer[5] = domainName;
+    buffer[6] = dhcpT1value;
+    buffer[7] = dhcpT2value;
+    buffer[8] = endOption;
+    
+    //put data in W5100 transmit buffer
+    _dhcpUdpSocket.write(buffer, 9);
+
+    _dhcpUdpSocket.endPacket();
+}
+
+uint8_t DhcpClass::parseDHCPResponse(unsigned long responseTimeout, uint32_t& transactionId)
+{
+    uint8_t type = 0;
+    uint8_t opt_len = 0;
+     
+    unsigned long startTime = millis();
+
+    while(_dhcpUdpSocket.parsePacket() <= 0)
+    {
+        if((millis() - startTime) > responseTimeout)
+        {
+            return 255;
+        }
+        delay(50);
+    }
+    // start reading in the packet
+    RIP_MSG_FIXED fixedMsg;
+    _dhcpUdpSocket.read((uint8_t*)&fixedMsg, sizeof(RIP_MSG_FIXED));
+  
+    if(fixedMsg.op == DHCP_BOOTREPLY && _dhcpUdpSocket.remotePort() == DHCP_SERVER_PORT)
+    {
+        transactionId = ntohl(fixedMsg.xid);
+        if(memcmp(fixedMsg.chaddr, _dhcpMacAddr, 6) != 0 || (transactionId < _dhcpInitialTransactionId) || (transactionId > _dhcpTransactionId))
+        {
+            // Need to read the rest of the packet here regardless
+            _dhcpUdpSocket.flush();
+            return 0;
+        }
+
+        memcpy(_dhcpLocalIp, fixedMsg.yiaddr, 4);
+
+        // Skip to the option part
+        // Doing this a byte at a time so we don't have to put a big buffer
+        // on the stack (as we don't have lots of memory lying around)
+        for (int i =0; i < (240 - (int)sizeof(RIP_MSG_FIXED)); i++)
+        {
+            _dhcpUdpSocket.read(); // we don't care about the returned byte
+        }
+
+        while (_dhcpUdpSocket.available() > 0) 
+        {
+            switch (_dhcpUdpSocket.read()) 
+            {
+                case endOption :
+                    break;
+                    
+                case padOption :
+                    break;
+                
+                case dhcpMessageType :
+                    opt_len = _dhcpUdpSocket.read();
+                    type = _dhcpUdpSocket.read();
+                    break;
+                
+                case subnetMask :
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read(_dhcpSubnetMask, 4);
+                    break;
+                
+                case routersOnSubnet :
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read(_dhcpGatewayIp, 4);
+                    for (int i = 0; i < opt_len-4; i++)
+                    {
+                        _dhcpUdpSocket.read();
+                    }
+                    break;
+                
+                case dns :
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read(_dhcpDnsServerIp, 4);
+                    for (int i = 0; i < opt_len-4; i++)
+                    {
+                        _dhcpUdpSocket.read();
+                    }
+                    break;
+                
+                case dhcpServerIdentifier :
+                    opt_len = _dhcpUdpSocket.read();
+                    if( *((uint32_t*)_dhcpDhcpServerIp) == 0 || 
+                        IPAddress(_dhcpDhcpServerIp) == _dhcpUdpSocket.remoteIP() )
+                    {
+                        _dhcpUdpSocket.read(_dhcpDhcpServerIp, sizeof(_dhcpDhcpServerIp));
+                    }
+                    else
+                    {
+                        // Skip over the rest of this option
+                        while (opt_len--)
+                        {
+                            _dhcpUdpSocket.read();
+                        }
+                    }
+                    break;
+
+                case dhcpT1value : 
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read((uint8_t*)&_dhcpT1, sizeof(_dhcpT1));
+                    _dhcpT1 = ntohl(_dhcpT1);
+                    break;
+
+                case dhcpT2value : 
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read((uint8_t*)&_dhcpT2, sizeof(_dhcpT2));
+                    _dhcpT2 = ntohl(_dhcpT2);
+                    break;
+
+                case dhcpIPaddrLeaseTime :
+                    opt_len = _dhcpUdpSocket.read();
+                    _dhcpUdpSocket.read((uint8_t*)&_dhcpLeaseTime, sizeof(_dhcpLeaseTime));
+                    _dhcpLeaseTime = ntohl(_dhcpLeaseTime);
+                    _renewInSec = _dhcpLeaseTime;
+                    break;
+
+                default :
+                    opt_len = _dhcpUdpSocket.read();
+                    // Skip over the rest of this option
+                    while (opt_len--)
+                    {
+                        _dhcpUdpSocket.read();
+                    }
+                    break;
+            }
+        }
+    }
+
+    // Need to skip to end of the packet regardless here
+    _dhcpUdpSocket.flush();
+
+    return type;
+}
+
 
 /*
-   op            1  Message op code / message type.
-                    1 = BOOTREQUEST, 2 = BOOTREPLY
-   htype         1  Hardware address type, see ARP section in "Assigned
-                    Numbers" RFC; e.g., '1' = 10mb ethernet.
-   hlen          1  Hardware address length (e.g.  '6' for 10mb
-                    ethernet).
-   hops          1  Client sets to zero, optionally used by relay agents
-                    when booting via a relay agent.
-   xid           4  Transaction ID, a random number chosen by the
-                    client, used by the client and server to associate
-                    messages and responses between a client and a
-                    server.
-   secs          2  Filled in by client, seconds elapsed since client
-                    began address acquisition or renewal process.
-   flags         2  Flags (see figure 2).
-   ciaddr        4  Client IP address; only filled in if client is in
-                    BOUND, RENEW or REBINDING state and can respond
-                    to ARP requests.
-   yiaddr        4  'your' (client) IP address.
-   siaddr        4  IP address of next server to use in bootstrap;
-                    returned in DHCPOFFER, DHCPACK by server.
-   giaddr        4  Relay agent IP address, used in booting via a
-                    relay agent.
-   chaddr       16  Client hardware address.
-   sname        64  Optional server host name, null terminated string.
-   file        128  Boot file name, null terminated string; "generic"
-                    name or null in DHCPDISCOVER, fully qualified
-                    directory-path name in DHCPOFFER.
-   options     var  Optional parameters field.  See the options
-                    documents for a list of defined options.
- */
-
-
-
-
-// size 236
-typedef struct {
-    byte op, htype, hlen, hops;
-    uint32_t xid;
-    uint16_t secs, flags;
-    byte ciaddr[4], yiaddr[4], siaddr[4], giaddr[4];
-    byte chaddr[16], sname[64], file[128];
-    // options
-} DHCPdata;
-
-#define DHCP_SRC_PORT 67
-#define DHCP_DEST_PORT 68
-
-// timeouts im ms
-#define DHCP_REQUEST_TIMEOUT 10000
-
-#define DHCP_HOSTNAME_MAX_LEN 32
-
-static byte dhcpState = DHCP_STATE_INIT;
-static char hostname[DHCP_HOSTNAME_MAX_LEN] = "Arduino-00";
-static uint32_t currentXid;
-static uint32_t stateTimer;
-static uint32_t leaseStart;
-static uint32_t leaseTime;
-static byte* bufPtr;
-
-static uint8_t dhcpCustomOptionNum = 0;
-static DhcpOptionCallback dhcpCustomOptionCallback = NULL;
-
-// static uint8_t allOnes[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-
-static void addToBuf (byte b) {
-    *bufPtr++ = b;
-}
-
-static void addBytes (byte len, const byte* data) {
-    while (len-- > 0)
-        addToBuf(*data++);
-}
-
-
-// Main DHCP sending function
-
-// implemented
-// state             / msgtype
-// INIT              / DHCPDISCOVER
-// SELECTING         / DHCPREQUEST
-// BOUND (RENEWING)  / DHCPREQUEST
-
-// ----------------------------------------------------------
-// |              |SELECTING    |RENEWING     |INIT         |
-// ----------------------------------------------------------
-// |broad/unicast |broadcast    |unicast      |broadcast    |
-// |server-ip     |MUST         |MUST NOT     |MUST NOT     | option 54
-// |requested-ip  |MUST         |MUST NOT     |MUST NOT     | option 50
-// |ciaddr        |zero         |IP address   |zero         |
-// ----------------------------------------------------------
-
-// options used (both send/receive)
-// 12  Host Name Option
-// 50  Requested IP Address
-// 51  IP Address Lease Time
-// 53  DHCP message type
-// 54  Server-identifier
-// 55  Parameter request list
-// 58  Renewal (T1) Time Value
-// 61  Client-identifier
-// 255 End
-
-static void send_dhcp_message (void) {
-
-    uint8_t allOnes[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
-
-    memset(gPB, 0, UDP_DATA_P + sizeof( DHCPdata ));
-
-    EtherCard::udpPrepare(DHCP_DEST_PORT,
-                          (dhcpState == DHCP_STATE_BOUND ? EtherCard::dhcpip : allOnes),
-                          DHCP_SRC_PORT);   // SRC<->DST ??
-
-    if (dhcpState != DHCP_STATE_BOUND)
-        EtherCard::copyMac(gPB + ETH_DST_MAC, allOnes); //force broadcast mac
-
-    // Build DHCP Packet from buf[UDP_DATA_P]
-    DHCPdata *dhcpPtr = (DHCPdata*) (gPB + UDP_DATA_P);
-    dhcpPtr->op = DHCP_BOOTREQUEST;
-    dhcpPtr->htype = 1;
-    dhcpPtr->hlen = 6;
-    dhcpPtr->xid = currentXid;
-    if (dhcpState == DHCP_STATE_BOUND) {
-        EtherCard::copyIp(dhcpPtr->ciaddr, EtherCard::myip);
-    }
-    EtherCard::copyMac(dhcpPtr->chaddr, EtherCard::mymac);
-
-    // options defined as option, length, value
-    bufPtr = gPB + UDP_DATA_P + sizeof( DHCPdata );
-    // DHCP magic cookie, followed by message type
-    static byte cookie[] = { 99, 130, 83, 99, 53, 1 };
-    addBytes(sizeof cookie, cookie);
-    // addToBuf(53);  // DHCP_STATE_SELECTING, DHCP_STATE_REQUESTING
-    // addToBuf(1);   // Length
-    addToBuf(dhcpState == DHCP_STATE_INIT ? DHCP_DISCOVER : DHCP_REQUEST);
-
-    // Client Identifier Option, this is the client mac address
-    addToBuf(61);     // Client identifier
-    addToBuf(7);      // Length
-    addToBuf(0x01);   // Ethernet
-    addBytes(6, EtherCard::mymac);
-
-    addToBuf(12);     // Host name Option
-    addToBuf(10);
-    addBytes(10, (byte*) hostname);
-
-    if( dhcpState == DHCP_STATE_SELECTING) {
-        addToBuf(50); // Request IP address
-        addToBuf(4);
-        addBytes(4, EtherCard::myip);
-
-        // Request using server ip address
-        addToBuf(54); // Server IP address
-        addToBuf(4);
-        addBytes(4, EtherCard::dhcpip);
-    }
-
-    // Additional info in parameter list - minimal list for what we need
-    byte len = 3;
-    if (dhcpCustomOptionNum)
-        len++;
-    addToBuf(55);     // Parameter request list
-    addToBuf(len);    // Length
-    addToBuf(1);      // Subnet mask
-    addToBuf(3);      // Route/Gateway
-    addToBuf(6);      // DNS Server
-    if (dhcpCustomOptionNum)
-        addToBuf(dhcpCustomOptionNum);  // Custom option
-    addToBuf(255);    // end option
-
-    // packet size will be under 300 bytes
-    EtherCard::udpTransmit((bufPtr - gPB) - UDP_DATA_P);
-}
-
-static void process_dhcp_offer (uint16_t len) {
-    // Map struct onto payload
-    DHCPdata *dhcpPtr = (DHCPdata*) (gPB + UDP_DATA_P);
-    // Offered IP address is in yiaddr
-    EtherCard::copyIp(EtherCard::myip, dhcpPtr->yiaddr);
-    // Scan through variable length option list identifying options we want
-    byte *ptr = (byte*) (dhcpPtr + 1) + 4;
-    bool done = false;
-    do {
-        byte option = *ptr++;
-        byte optionLen = *ptr++;
-        switch (option) {
-            case 1:   EtherCard::copyIp(EtherCard::netmask, ptr);
-                      break;
-            case 3:   EtherCard::copyIp(EtherCard::gwip, ptr);
-                      break;
-            case 6:   EtherCard::copyIp(EtherCard::dnsip, ptr);
-                      break;
-            case 51:
-            case 58:  leaseTime = 0; // option 58 = Renewal Time, 51 = Lease Time
-                      for (byte i = 0; i<4; i++)
-                          leaseTime = (leaseTime << 8) + ptr[i];
-                      leaseTime *= 1000;      // milliseconds
-                      break;
-            case 54:  EtherCard::copyIp(EtherCard::dhcpip, ptr);
-                      break;
-            case 255: done = true;
-                      break;
-            default: {
-                // Is is a custom configured option?
-                if (dhcpCustomOptionCallback && option == dhcpCustomOptionNum) {
-                    dhcpCustomOptionCallback(option, ptr, optionLen);
-                }
-            }
+    returns:
+    0/DHCP_CHECK_NONE: nothing happened
+    1/DHCP_CHECK_RENEW_FAIL: renew failed
+    2/DHCP_CHECK_RENEW_OK: renew success
+    3/DHCP_CHECK_REBIND_FAIL: rebind fail
+    4/DHCP_CHECK_REBIND_OK: rebind success
+*/
+int DhcpClass::checkLease(){
+    //this uses a signed / unsigned trick to deal with millis overflow
+    unsigned long now = millis();
+    signed long snow = (long)now;
+    int rc=DHCP_CHECK_NONE;
+    if (_lastCheck != 0){
+        signed long factor;
+        //calc how many ms past the timeout we are
+        factor = snow - (long)_secTimeout;
+        //if on or passed the timeout, reduce the counters
+        if ( factor >= 0 ){
+            //next timeout should be now plus 1000 ms minus parts of second in factor
+            _secTimeout = snow + 1000 - factor % 1000;
+            //how many seconds late are we, minimum 1
+            factor = factor / 1000 +1;
+            
+            //reduce the counters by that mouch
+            //if we can assume that the cycle time (factor) is fairly constant
+            //and if the remainder is less than cycle time * 2 
+            //do it early instead of late
+            if(_renewInSec < factor*2 )
+                _renewInSec = 0;
+            else
+                _renewInSec -= factor;
+            
+            if(_rebindInSec < factor*2 )
+                _rebindInSec = 0;
+            else
+                _rebindInSec -= factor;
         }
-        ptr += optionLen;
-    } while (!done && ptr < gPB + len);
-}
 
-static bool dhcp_received_message_type (uint16_t len, byte msgType) {
-    // Map struct onto payload
-    DHCPdata *dhcpPtr = (DHCPdata*) (gPB + UDP_DATA_P);
+        //if we have a lease but should renew, do it
+        if (_dhcp_state == STATE_DHCP_LEASED && _renewInSec <=0){
+            _dhcp_state = STATE_DHCP_REREQUEST;
+            rc = 1 + request_DHCP_lease();
+        }
 
-    if (len >= 70 && gPB[UDP_SRC_PORT_L_P] == DHCP_SRC_PORT &&
-            dhcpPtr->xid == currentXid ) {
-
-        byte *ptr = (byte*) (dhcpPtr + 1) + 4;
-        do {
-            byte option = *ptr++;
-            byte optionLen = *ptr++;
-            if(option == 53 && *ptr == msgType ) {
-                // DHCP Message type match found
-                return true;
-            }
-            ptr += optionLen;
-        } while (ptr < gPB + len);
+        //if we have a lease or is renewing but should bind, do it
+        if( (_dhcp_state == STATE_DHCP_LEASED || _dhcp_state == STATE_DHCP_START) && _rebindInSec <=0){
+            //this should basically restart completely
+            _dhcp_state = STATE_DHCP_START;
+            reset_DHCP_lease();
+            rc = 3 + request_DHCP_lease();
+        }
     }
-    return false;
+    else{
+        _secTimeout = snow + 1000;
+    }
+
+    _lastCheck = now;
+    return rc;
 }
 
-bool EtherCard::dhcpSetup (const char *hname, bool fromRam) {
-	 // Use during setup, as this discards all incoming requests until it returns.
-	 // That shouldn't be a problem, because we don't have an IP-address yet.
-	 // Will try 60 secs to obtain DHCP-lease.
-
-	 using_dhcp = true;
-    
-   if(hname != NULL){   
-     if(fromRam){
-    	 strncpy(hostname, hname, DHCP_HOSTNAME_MAX_LEN);
-     }
-     else{
-       strncpy_P(hostname, hname, DHCP_HOSTNAME_MAX_LEN);
-     }
-   }
-   else{
-     // Set a unique hostname, use Arduino-?? with last octet of mac address
-     hostname[8] = '0' + (mymac[5] >> 4);
-     hostname[9] = '0' + (mymac[5] & 0x0F);   
-   }
-
-	 dhcpState = DHCP_STATE_INIT;
-	 uint16_t start = millis();	
-
-   while (dhcpState != DHCP_STATE_BOUND && (uint16_t) (millis() - start) < 60000) {
-       if (isLinkUp()) DhcpStateMachine(packetReceive());
-   }
-   updateBroadcastAddress();
-   delaycnt = 0;
-   return dhcpState == DHCP_STATE_BOUND ;
-}
-
-void EtherCard::dhcpAddOptionCallback(uint8_t option, DhcpOptionCallback callback)
+IPAddress DhcpClass::getLocalIp()
 {
-    dhcpCustomOptionNum = option;
-    dhcpCustomOptionCallback = callback;
+    return IPAddress(_dhcpLocalIp);
 }
 
-void EtherCard::DhcpStateMachine (uint16_t len) {
-
-#ifdef DHCPDEBUG
-    if (dhcpState != DHCP_STATE_BOUND) {
-        Serial.print(millis());
-        Serial.print(" State: ");
-    }
-    switch (dhcpState) {
-    case DHCP_STATE_INIT:
-        Serial.println("Init");
-        break;
-    case DHCP_STATE_SELECTING:
-        Serial.println("Selecting");
-        break;
-    case DHCP_STATE_REQUESTING:
-        Serial.println("Requesting");
-        break;
-    case DHCP_STATE_RENEWING:
-        Serial.println("Renew");
-        break;
-    }
-#endif
-
-    switch (dhcpState) {
-
-    case DHCP_STATE_BOUND:
-        //!@todo Due to millis() 49 day wrap-around, DHCP renewal may not work as expected
-        if (millis() >= leaseStart + leaseTime) {
-            send_dhcp_message();
-            dhcpState = DHCP_STATE_RENEWING;
-            stateTimer = millis();
-        }
-        break;
-
-    case DHCP_STATE_INIT:
-        currentXid = millis();
-        memset(myip,0,4); // force ip 0.0.0.0
-        send_dhcp_message();
-        enableBroadcast(true); //Temporarily enable broadcasts
-        dhcpState = DHCP_STATE_SELECTING;
-        stateTimer = millis();
-        break;
-
-    case DHCP_STATE_SELECTING:
-        if (dhcp_received_message_type(len, DHCP_OFFER)) {
-            process_dhcp_offer(len);
-            send_dhcp_message();
-            dhcpState = DHCP_STATE_REQUESTING;
-            stateTimer = millis();
-        } else {
-            if (millis() > stateTimer + DHCP_REQUEST_TIMEOUT) {
-                dhcpState = DHCP_STATE_INIT;
-            }
-        }
-        break;
-
-    case DHCP_STATE_REQUESTING:
-    case DHCP_STATE_RENEWING:
-        if (dhcp_received_message_type(len, DHCP_ACK)) {
-            disableBroadcast(true); //Disable broadcast after temporary enable
-            leaseStart = millis();
-            if (gwip[0] != 0) setGwIp(gwip); // why is this? because it initiates an arp request
-            dhcpState = DHCP_STATE_BOUND;
-        } else {
-            if (millis() > stateTimer + DHCP_REQUEST_TIMEOUT) {
-                dhcpState = DHCP_STATE_INIT;
-            }
-        }
-        break;
-
-    }
+IPAddress DhcpClass::getSubnetMask()
+{
+    return IPAddress(_dhcpSubnetMask);
 }
 
+IPAddress DhcpClass::getGatewayIp()
+{
+    return IPAddress(_dhcpGatewayIp);
+}
 
+IPAddress DhcpClass::getDhcpServerIp()
+{
+    return IPAddress(_dhcpDhcpServerIp);
+}
 
+IPAddress DhcpClass::getDnsServerIp()
+{
+    return IPAddress(_dhcpDnsServerIp);
+}
+
+void DhcpClass::printByte(char * buf, uint8_t n ) {
+  char *str = &buf[1];
+  buf[0]='0';
+  do {
+    unsigned long m = n;
+    n /= 16;
+    char c = m - 16 * n;
+    *str-- = c < 10 ? c + '0' : c + 'A' - 10;
+  } while(n);
+}
