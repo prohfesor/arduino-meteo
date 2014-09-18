@@ -5,6 +5,7 @@
 
 #include "Wire.h"
 #include "Adafruit_BMP085.h"
+
 #include "SPI.h"
 #include "Ethernet.h"
 
@@ -14,11 +15,15 @@
 DHT dht(DHTPIN, DHTTYPE, 7);
 Adafruit_BMP085 bmp;
 
-//LAN vars
+//LAN vars 
 byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
+IPAddress ip(192, 168, 237, 55);
+IPAddress dnsIp(192, 168, 237, 1);
+IPAddress gwIp(192, 168, 237, 1);
 long lastPush, lastEth;
-int EthernetResetPin = 2;
 EthernetClient client;
+boolean lastConnected = false;
+boolean webservice = false;
 
 //timings
 #define PUSH_INTERVAL 5000;
@@ -31,15 +36,15 @@ float t, t2, h, a, p;
 
 void setup() {
 	Serial.begin(9600);
-	
+
+	Serial.println("Ethernet starting");
+	ethStart();
+
 	Serial.println("DHTxx starting");
 	dht.begin();
 	
 	Serial.println("BMPxxx starting");
 	bmp.begin();
-
-	Serial.println("Ethernet starting");
-	ethStart();
 
 	Serial.println();
 }
@@ -54,7 +59,7 @@ void loop() {
 	}
 
 	long chk = lastPush + PUSH_INTERVAL;
-	if (millis() > chk) {
+	if (millis() > chk || !lastPush) {
 		lastPush = millis();
 
 		//DHT sensor - takes about 250 milliseconds!
@@ -63,10 +68,11 @@ void loop() {
 		//BMP sensor
 		readBmp();
 
-		//LAN narodmon
+		//LAN send 
 		sendTcp();
 	}
 
+	readTcp();
 }
 
 
@@ -121,38 +127,62 @@ void readBmp() {
 
 
 void ethStart() {
-	/*
-	Serial.print("Reseting Ethernet... ");
-	pinMode(EthernetResetPin, OUTPUT);
-	digitalWrite(EthernetResetPin, LOW);
-	delay(100);
-	digitalWrite(EthernetResetPin, HIGH);
-	Serial.println("done");
-	delay(100);
-	*/
+	Serial.println("Receive DHCP... ");
 
-	Serial.print("Receive DHCP... ");
-	if (Ethernet.begin(mac)) {
-		Serial.println("ok");
-		// try to congifure using IP address instead of DHCP:
-		//Ethernet.begin(mac, ip);
-		// print your local IP address:
-		Serial.print("My IP address: ");
-		IPAddress ip = Ethernet.localIP();
-		for (byte thisByte = 0; thisByte < 4; thisByte++) {
-			// print the value of each byte of the IP address:
-			Serial.print(ip[thisByte], DEC);
-			Serial.print(".");
-		}
+	if (Ethernet.begin(mac) == 0) {
+		Serial.println("Failed to configure Ethernet using DHCP");
 	}
-	else {
-		Serial.println("FAILED!");
-	}
+
+	delay(1000);
+	Serial.print("My IP address: ");
+	Serial.println(Ethernet.localIP());
 }
 
 
 
-
 void sendTcp() {
+	client.stop();
+	// if you get a connection, report back via serial:
+	char server[] = "openweathermap.org";
+	String dataString = "name=sneg-test";
+	dataString += "&temp=";
+	dataString += t;
+	dataString += "&humidity=";
+	dataString += h;
+	dataString += "&pressure=";
+	dataString += p/100;
+	if (client.connect(server, 80)) {
+		Serial.println("connected");
+		// Make a HTTP request:
+		client.println("POST /data/post HTTP/1.1");
+		client.println("Host: openweathermap.org");
+		client.print("Authorization: Basic ");
+		client.println("xxxxxxxxxxxxxxxxxxxxxxxxxxx==");	//string "login:pass" with base64 
+		client.println("Content-Type: application/x-www-form-urlencoded");
+		client.print("Content-Length: ");
+		client.println(dataString.length());
+		client.println("Connection: close");
+		client.println();
+		client.println(dataString);
 
+		lastConnected = client.connected();
+	}
+	else {
+		// if you didn't get a connection to the server:
+		Serial.println("connection failed");
+	}
+}
+
+
+void readTcp() {
+	if (client.available()) {
+		char c = client.read();
+		Serial.print(c);
+	}
+	lastConnected = client.connected();
+	if(!client.connected() && lastConnected) {
+		Serial.println();
+		Serial.println("disconnecting.");
+		client.stop();
+	}
 }
