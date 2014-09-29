@@ -21,6 +21,7 @@ boolean webservice = false;
 
 //post settings
 char openWeatherAuth[] = "xxxxxxxxxxxxxxxxxxx==";	//string "login:pass" with base64 
+char narodmonAuth[] = "xxxxxxxxxxxxxxxxxxxxxx";
 char stationName[] = "sneg-test";
 
 
@@ -153,10 +154,13 @@ void ethRenew() {
 
 void sendTcp() {
 	client.stop();
-	// post to service 1
+	String server;
+	String dataString;
+	String headerString;
+	// prepare post to service 1
 	if (webservice){
-		char server[] = "openweathermap.org";
-		String dataString = "name=";
+		server = "openweathermap.org";
+		dataString = "name=";
 		dataString += stationName;
 		dataString += "&temp=";
 		dataString += t;
@@ -164,59 +168,65 @@ void sendTcp() {
 		dataString += h;
 		dataString += "&pressure=";
 		dataString += p / 100;
-		if (client.connect(server, 80)) {
-			Serial.println("connected");
-			// Make a HTTP request:
-			client.println("POST /data/post HTTP/1.1");
-			client.print("Host: ");
-			client.println(server);
-			client.print("Authorization: Basic ");
-			client.println(openWeatherAuth);
-			client.println("Content-Type: application/x-www-form-urlencoded");
-			client.print("Content-Length: ");
-			client.println(dataString.length());
-			client.println("Connection: close");
-			client.println();
-			client.println(dataString);
-
-			lastConnected = client.connected();
-		}
-		else {
-			// if you didn't get a connection to the server:
-			Serial.println("connection failed");
-		}
+		headerString = "POST /data/post HTTP/1.1\n";
+		headerString += "Host: ";
+		headerString += server;
+		headerString += "\n";
+		headerString += "Authorization: Basic ";
+		headerString += openWeatherAuth;
+		headerString += "\n";
+		headerString += "Content-Type: application/x-www-form-urlencoded\n";
+		headerString += "Content-Length: ";
+		headerString += dataString.length();
+		headerString += "\n";
+		headerString += "Connection: close";
 	}
-	// post to service 2
+	// prepare post to service 2
 	else {
-		char server[] = "narodmon.ru";
-		String dataString = "ID=74-69-68-67-66-01&name=";
+		server = "narodmon.ru";
+		dataString = "ID=";
+		dataString += narodmonAuth;
+		dataString += "&name=";
 		dataString += stationName;
-		dataString += "&74696867660101=";
+		dataString += "&";
+		dataString += narodmonAuth;
+		dataString += "01=";
 		dataString += t;
-		dataString += "&74696867660102=";
+		dataString += "&";
+		dataString += narodmonAuth;
+		dataString += "02=";
 		dataString += h;
-		dataString += "&74696867660103=";
+		dataString += "&";
+		dataString += narodmonAuth;
+		dataString += "03=";
 		dataString += p;
-		if (client.connect(server, 80)) {
-			Serial.println("connected");
-			// Make a HTTP request:
-			client.println("POST /post.php HTTP/1.1");
-			client.print("Host: ");
-			client.println(server);
-			client.println("Content-Type: application/x-www-form-urlencoded");
-			client.print("Content-Length: ");
-			client.println(dataString.length());
-			client.println("Connection: close");
-			client.println();
-			client.println(dataString);
-
-			lastConnected = client.connected();
-		}
-		else {
-			// if you didn't get a connection to the server:
-			Serial.println("connection failed");
-		}
+		headerString = "POST /post.php HTTP/1.1\n";
+		headerString += "Host: ";
+		headerString += server;
+		headerString += "\n";
+		headerString += "Content-Type: application/x-www-form-urlencoded\n";
+		headerString += "Content-Length: ";
+		headerString += dataString.length();
+		headerString += "\n";
+		headerString += "Connection: close";
 	}
+
+	char charBuf[server.length() + 1];
+	server.toCharArray(charBuf, server.length()+1);
+	if (client.connect(charBuf, 80)) {
+		Serial.println("connected");
+		// Make a HTTP request:
+		client.println(headerString);
+		client.println();
+		client.println(dataString);
+
+		lastConnected = client.connected();
+	}
+	else {
+		// if you didn't get a connection to the server:
+		Serial.println("connection failed");
+	}
+
 	webservice = !webservice;
 }
 
