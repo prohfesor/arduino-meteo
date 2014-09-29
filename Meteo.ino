@@ -1,6 +1,3 @@
-// Example testing sketch for various DHT humidity/temperature sensors
-// Written by ladyada, public domain
-
 #include "DHT.h"
 
 #include "Wire.h"
@@ -17,16 +14,18 @@ Adafruit_BMP085 bmp;
 
 //LAN vars 
 byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
-IPAddress ip(192, 168, 237, 55);
-IPAddress dnsIp(192, 168, 237, 1);
-IPAddress gwIp(192, 168, 237, 1);
 long lastPush, lastEth;
 EthernetClient client;
 boolean lastConnected = false;
 boolean webservice = false;
 
+//post settings
+char openWeatherAuth[] = "xxxxxxxxxxxxxxxxxxx==";	//string "login:pass" with base64 
+char stationName[] = "sneg-test";
+
+
 //timings
-#define PUSH_INTERVAL 5000;
+#define PUSH_INTERVAL 60000;
 #define ETH_INTERVAL  600000;
 
 //sensor vars
@@ -55,7 +54,7 @@ void loop() {
 	long chke = lastEth + ETH_INTERVAL;
 	if (millis() > chke){
 		lastEth = millis();
-		ethStart();
+		ethRenew();
 	}
 
 	long chk = lastPush + PUSH_INTERVAL;
@@ -132,6 +131,9 @@ void ethStart() {
 	if (Ethernet.begin(mac) == 0) {
 		Serial.println("Failed to configure Ethernet using DHCP");
 	}
+	else {
+		Serial.println("OK");
+	}
 
 	delay(1000);
 	Serial.print("My IP address: ");
@@ -140,37 +142,82 @@ void ethStart() {
 
 
 
+void ethRenew() {
+	Serial.println("Need ethernet renew...");
+	Ethernet.maintain();
+	Serial.println("done");
+	ethStart();
+}
+
+
+
 void sendTcp() {
 	client.stop();
-	// if you get a connection, report back via serial:
-	char server[] = "openweathermap.org";
-	String dataString = "name=sneg-test";
-	dataString += "&temp=";
-	dataString += t;
-	dataString += "&humidity=";
-	dataString += h;
-	dataString += "&pressure=";
-	dataString += p/100;
-	if (client.connect(server, 80)) {
-		Serial.println("connected");
-		// Make a HTTP request:
-		client.println("POST /data/post HTTP/1.1");
-		client.println("Host: openweathermap.org");
-		client.print("Authorization: Basic ");
-		client.println("xxxxxxxxxxxxxxxxxxxxxxxxxxx==");	//string "login:pass" with base64 
-		client.println("Content-Type: application/x-www-form-urlencoded");
-		client.print("Content-Length: ");
-		client.println(dataString.length());
-		client.println("Connection: close");
-		client.println();
-		client.println(dataString);
+	// post to service 1
+	if (webservice){
+		char server[] = "openweathermap.org";
+		String dataString = "name=";
+		dataString += stationName;
+		dataString += "&temp=";
+		dataString += t;
+		dataString += "&humidity=";
+		dataString += h;
+		dataString += "&pressure=";
+		dataString += p / 100;
+		if (client.connect(server, 80)) {
+			Serial.println("connected");
+			// Make a HTTP request:
+			client.println("POST /data/post HTTP/1.1");
+			client.print("Host: ");
+			client.println(server);
+			client.print("Authorization: Basic ");
+			client.println(openWeatherAuth);
+			client.println("Content-Type: application/x-www-form-urlencoded");
+			client.print("Content-Length: ");
+			client.println(dataString.length());
+			client.println("Connection: close");
+			client.println();
+			client.println(dataString);
 
-		lastConnected = client.connected();
+			lastConnected = client.connected();
+		}
+		else {
+			// if you didn't get a connection to the server:
+			Serial.println("connection failed");
+		}
 	}
+	// post to service 2
 	else {
-		// if you didn't get a connection to the server:
-		Serial.println("connection failed");
+		char server[] = "narodmon.ru";
+		String dataString = "ID=74-69-68-67-66-01&name=";
+		dataString += stationName;
+		dataString += "&74696867660101=";
+		dataString += t;
+		dataString += "&74696867660102=";
+		dataString += h;
+		dataString += "&74696867660103=";
+		dataString += p;
+		if (client.connect(server, 80)) {
+			Serial.println("connected");
+			// Make a HTTP request:
+			client.println("POST /post.php HTTP/1.1");
+			client.print("Host: ");
+			client.println(server);
+			client.println("Content-Type: application/x-www-form-urlencoded");
+			client.print("Content-Length: ");
+			client.println(dataString.length());
+			client.println("Connection: close");
+			client.println();
+			client.println(dataString);
+
+			lastConnected = client.connected();
+		}
+		else {
+			// if you didn't get a connection to the server:
+			Serial.println("connection failed");
+		}
 	}
+	webservice = !webservice;
 }
 
 
@@ -178,6 +225,7 @@ void readTcp() {
 	if (client.available()) {
 		char c = client.read();
 		Serial.print(c);
+		lastEth = millis();
 	}
 	lastConnected = client.connected();
 	if(!client.connected() && lastConnected) {
