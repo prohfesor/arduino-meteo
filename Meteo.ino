@@ -13,7 +13,7 @@ DHT dht(DHTPIN, DHTTYPE, 7);
 Adafruit_BMP085 bmp;
 
 //LAN vars 
-byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x01 };
+byte mac[] = { 0x74, 0x69, 0x68, 0x67, 0x66, 0x00 };
 long lastPush, lastEth;
 EthernetClient client;
 boolean lastConnected = false;
@@ -200,6 +200,10 @@ void sendTcp() {
 		dataString += narodmonAuth;
 		dataString += "03=";
 		dataString += p;
+		dataString += "&";
+		dataString += narodmonAuth;
+		dataString += "04=";
+		dataString += t2;
 		headerString = "POST /post.php HTTP/1.1\n";
 		headerString += "Host: ";
 		headerString += server;
